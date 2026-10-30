@@ -318,6 +318,8 @@ def _draw_logo(stdscr, width: int, height: int) -> int:
 
 
 def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[PanelState]:
+    import curses
+
     curses.curs_set(0)
     stdscr.keypad(True)
     _init_colors(curses)
@@ -436,6 +438,7 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
 
 
 def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
+    import curses
     import asyncio
     import threading
     import time
@@ -549,6 +552,7 @@ def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
 
 
 def _results_screen(stdscr, state: PanelState, hits: list) -> str:
+    import curses
     import json
 
     curses.curs_set(0)
