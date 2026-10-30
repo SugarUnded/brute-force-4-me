@@ -41,6 +41,13 @@ def test_banner_color_wraps_rows():
     assert banner.RESET in colored
 
 
+def test_banner_is_red():
+    colored = banner.render_banner(unicode=True, color=True)
+    assert banner.BRED in colored
+    assert banner.LOGO_COLOR == banner.BRED
+    assert banner.TAGLINE_COLOR == banner.BRED
+
+
 # --- render_panel -----------------------------------------------------------
 
 def test_panel_ascii_borders():

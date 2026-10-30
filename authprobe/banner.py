@@ -19,6 +19,10 @@ BCYAN = "\033[1;96m"
 BMAGENTA = "\033[1;95m"
 BRED = "\033[1;91m"
 
+# Banner palette. Change these two to restyle the whole banner.
+LOGO_COLOR = BRED
+TAGLINE_COLOR = BRED
+
 # --- "SUGAR" logo, block font (Unicode) -----------------------------------
 _BLOCK = [
     "███████╗██╗   ██╗ ██████╗  █████╗ ██████╗ ",
@@ -88,9 +92,9 @@ def render_banner(
     logo = _BLOCK if unicode else _PLAIN
     width = max(len(row) for row in logo)
 
-    lines = [colorize(row.ljust(width), BMAGENTA, color) for row in logo]
+    lines = [colorize(row.ljust(width), LOGO_COLOR, color) for row in logo]
     pad = max(0, (width - len(tagline)) // 2)
-    lines.append(colorize(" " * pad + tagline, BCYAN, color))
+    lines.append(colorize(" " * pad + tagline, TAGLINE_COLOR, color))
     lines.append("")
     return "\n".join(lines)
 
