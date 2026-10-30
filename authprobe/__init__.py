@@ -1,0 +1,14 @@
+"""authprobe - async HTTP login audit tool."""
+
+from .engine import Attempt, ProbeConfig, RateLimiter, is_success, run_probe
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "Attempt",
+    "ProbeConfig",
+    "RateLimiter",
+    "is_success",
+    "run_probe",
+    "__version__",
+]
