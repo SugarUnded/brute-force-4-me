@@ -7,8 +7,10 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from .engine import Attempt, ProbeConfig, run_probe
+from .presets import get_preset, list_presets
 
 
 def _read_lines(path: str) -> list[str]:
@@ -25,22 +27,45 @@ def _parse_status(value: str) -> tuple[int, ...]:
     return tuple(int(x.strip()) for x in value.split(",") if x.strip())
 
 
+def _kv(items: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for item in items:
+        if ":" not in item:
+            raise SystemExit(f"expected K:V, got {item!r}")
+        key, val = item.split(":", 1)
+        out[key.strip()] = val.strip()
+    return out
+
+
+def _apply_preset_path(url: str, path: str | None) -> str:
+    """Append a preset's path only when the given URL has no path of its own."""
+    if not path:
+        return url
+    parts = urlsplit(url)
+    if parts.path in ("", "/"):
+        return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+    return url
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="authprobe",
         description="Probe an HTTP login endpoint with candidate credentials (authorized testing only).",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("url", help="login endpoint URL")
-    p.add_argument("-m", "--method", default="POST", choices=["POST", "GET"])
-    p.add_argument("--user-field", default="username")
-    p.add_argument("--pass-field", default="password")
+    p.add_argument("url", nargs="?", help="login endpoint URL (or base URL when using --preset)")
+    p.add_argument("-m", "--method", choices=["POST", "GET"], default="POST")
+    p.add_argument("--list-presets", action="store_true", help="print detection presets and exit")
+    p.add_argument("--preset", help="detection preset (see --list-presets)")
+    p.add_argument("--user-field", help="form field holding the username")
+    p.add_argument("--pass-field", help="form field holding the password")
     p.add_argument("--user", help="single username to test")
     p.add_argument("--users", help="file with usernames (one per line)")
-    p.add_argument("-w", "--wordlist", required=True, help="password wordlist file")
-    p.add_argument("--success-status", default="301,302,303,307,308",
-                   help="comma-separated status codes meaning success")
+    p.add_argument("-w", "--wordlist", help="password wordlist file")
+    p.add_argument("--success-status", help="comma-separated status codes meaning success")
     p.add_argument("--success-body", help="success marker substring in response body")
     p.add_argument("--failure-body", help="failure marker substring in response body")
+    p.add_argument("--json-body", action="store_true", help="send credentials as a JSON body")
     p.add_argument("-H", "--header", action="append", default=[], metavar="K:V",
                    help="extra request header (repeatable)")
     p.add_argument("-d", "--data", action="append", default=[], metavar="K:V",
@@ -56,14 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _kv(items: list[str]) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for item in items:
-        if ":" not in item:
-            raise SystemExit(f"expected K:V, got {item!r}")
-        key, val = item.split(":", 1)
-        out[key.strip()] = val.strip()
-    return out
+def _print_presets() -> None:
+    print("Available presets:\n")
+    for preset in list_presets():
+        print(f"  {preset.name:<14} {preset.description}")
+        print(f"  {'':<14} url: {preset.recommended_url()}")
+        print(f"  {'':<14} fields: {preset.user_field} / {preset.pass_field}\n")
 
 
 def _collect_usernames(args: argparse.Namespace) -> list[str]:
@@ -77,24 +100,45 @@ def _collect_usernames(args: argparse.Namespace) -> list[str]:
     return users
 
 
-async def _run(args: argparse.Namespace) -> int:
-    cfg = ProbeConfig(
-        url=args.url,
+def _build_config(args: argparse.Namespace) -> ProbeConfig:
+    preset = get_preset(args.preset) if args.preset else None
+
+    user_field = args.user_field or (preset.user_field if preset else "username")
+    pass_field = args.pass_field or (preset.pass_field if preset else "password")
+    success_status = (
+        _parse_status(args.success_status)
+        if args.success_status
+        else (preset.success_status if preset else (301, 302, 303, 307, 308))
+    )
+    success_body = args.success_body or (preset.success_body_contains if preset else None)
+    failure_body = args.failure_body or (preset.failure_body_contains if preset else None)
+    json_body = args.json_body or (preset.json_body if preset else False)
+
+    headers = dict(preset.headers) if preset else {}
+    headers.update(_kv(args.header))
+
+    return ProbeConfig(
+        url=_apply_preset_path(args.url, preset.path if preset else None),
         method=args.method,
-        username_field=args.user_field,
-        password_field=args.pass_field,
-        headers=_kv(args.header),
+        username_field=user_field,
+        password_field=pass_field,
+        headers=headers,
         extra_data=_kv(args.data),
-        success_status=_parse_status(args.success_status),
-        success_body_contains=args.success_body,
-        failure_body_contains=args.failure_body,
+        success_status=success_status,
+        success_body_contains=success_body,
+        failure_body_contains=failure_body,
         timeout=args.timeout,
         concurrency=args.concurrency,
         rate=args.rate,
         follow_redirects=args.follow_redirects,
         stop_on_success=not args.no_stop,
+        json_body=json_body,
         user_agent=args.user_agent,
     )
+
+
+async def _run(args: argparse.Namespace) -> int:
+    cfg = _build_config(args)
 
     usernames = _collect_usernames(args)
     passwords = _read_lines(args.wordlist)
@@ -116,7 +160,7 @@ async def _run(args: argparse.Namespace) -> int:
         sys.stderr.flush()
 
     if not args.quiet:
-        sys.stderr.write(f"probing {args.url}  ({total} candidates, c={cfg.concurrency})\n")
+        sys.stderr.write(f"probing {cfg.url}  ({total} candidates, c={cfg.concurrency}, r={cfg.rate})\n")
 
     found = await run_probe(cfg, usernames, passwords, on_attempt=on_attempt)
 
@@ -145,6 +189,16 @@ async def _run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.list_presets:
+        _print_presets()
+        return 0
+
+    if not args.url:
+        raise SystemExit("error: a target URL is required (or use --list-presets)")
+    if not args.wordlist:
+        raise SystemExit("error: -w/--wordlist is required")
+
     try:
         return asyncio.run(_run(args))
     except KeyboardInterrupt:

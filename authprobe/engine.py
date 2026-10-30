@@ -42,6 +42,7 @@ class ProbeConfig:
     rate: float = 0.0  # requests/sec, 0 == unlimited
     follow_redirects: bool = False
     stop_on_success: bool = True
+    json_body: bool = False  # send the credential pair as a JSON body
     user_agent: Optional[str] = None
 
 
@@ -151,6 +152,8 @@ async def run_probe(
             try:
                 if cfg.method.upper() == "GET":
                     resp = await client.get(cfg.url, params=data)
+                elif cfg.json_body:
+                    resp = await client.post(cfg.url, json=data)
                 else:
                     resp = await client.post(cfg.url, data=data)
                 status, body = resp.status_code, resp.text
