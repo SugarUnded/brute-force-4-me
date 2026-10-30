@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="SUGAR" width="180">
+</p>
+
 # authprobe
 
 Async HTTP login endpoint auditor. Sends candidate credential pairs against a
