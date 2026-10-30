@@ -231,9 +231,25 @@ def _print_welcome() -> None:
     print("run `authprobe --help` for every flag")
 
 
+def _run_tui() -> int:
+    """Open the interactive panel. Falls back to the cheat-sheet without curses."""
+    from .tui import TuiUnavailable, run_tui
+
+    try:
+        return run_tui()
+    except TuiUnavailable as exc:
+        print(f"interactive panel unavailable: {exc}", file=sys.stderr)
+        print("on Windows, install it with: pip install windows-curses", file=sys.stderr)
+        print(file=sys.stderr)
+        _print_welcome()
+        return 0
+
 def main(argv: list[str] | None = None) -> int:
     raw = sys.argv[1:] if argv is None else list(argv)
     if not raw:
+        # Bare `authprobe`: panel when we have a terminal, cheat-sheet otherwise.
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            return _run_tui()
         _print_welcome()
         return 0
 

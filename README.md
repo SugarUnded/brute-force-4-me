@@ -26,18 +26,44 @@ authprobe --help   # every flag
 
 ## Open the interface
 
-Run `authprobe` with no arguments and the interface opens: the SUGAR banner
-plus a short cheat-sheet.
+`authprobe` with no arguments opens the interactive panel: the SUGAR banner, a
+form-style menu, and a live progress screen. Arrow keys / Tab move you between
+fields, left/right cycle the preset, concurrency and timeout, and you type into
+the text fields directly.
 
 ```
-███████╗██╗   ██╗ ██████╗  █████╗ ██████╗
-██╔════╝██║   ██║██╔════╝ ██╔══██╗██╔══██╗
-███████╗██║   ██║██║  ███╗███████║██████╔╝
-╚════██║██║   ██║██║   ██║██╔══██║██╔══██╗
-███████║╚██████╔╝╚██████╔╝██║  ██║██║  ██║
-╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
- login auditor  //  brute-force by Sugar
+┌ authprobe ───────────────────────────────────────┐
+│                                                  │
+│   Target       https://example.test/login        │
+│   Preset       generic-form    ◄ ►               │
+│   User field   username                           │
+│   Pass field   password                           │
+│   User         admin                              │
+│   Wordlist     ~/words.txt   16 passwords         │
+│   Concurrency  unlimited    ◄ ►                   │
+│   Timeout      10s           ◄ ►                  │
+│   OK status    301,302,303,307,308                │
+│   Fail body    (optional)                         │
+│   Hit body     (optional)                         │
+│                                                  │
+│   [ Start ] [ Quit ]                             │
+└──────────────────────────────────────────────────┘
+ Tab/↑↓ navega · ◄► gira · digite pra editar · Enter roda · Esc sai
+```
 
+`Start` validates the input on the spot (URL scheme, wordlist exists and has
+lines) and then swaps the menu for a progress bar with a green `HIT` on each
+match. `Esc` cancels the run mid-flight, and the results screen lists the
+valid pairs (`Enter` runs again from the menu, `s` dumps JSON, `q` quits).
+
+Picking a `Preset` fills in the field names and the failure/success markers for
+that CMS, editable right after. Leaving `Fail body`/`Hit body` empty and typing
+a status list in `OK status` works too.
+
+Without a terminal — piped stdout, a test runner, or Windows without
+`windows-curses` — it falls back to the plain banner + cheat-sheet:
+
+```
 usage: authprobe <url> --user NAME -w WORDS [options]
        authprobe --list-presets
 
@@ -49,23 +75,8 @@ examples:
 run `authprobe --help` for every flag
 ```
 
-Start a real run and the same banner is followed by a config panel and a live
-progress line (a green `HIT` on a match):
-
-```
-┌──────────────────────────────────────────┐
-│ authprobe                                │
-├──────────────────────────────────────────┤
-│ target      : https://example.test/login │
-│ method      : POST                       │
-│ fields      : username / password        │
-│ candidates  : 5000  (1 user x 5000 pass) │
-│ mode        : MAX POWER (no rate limit)  │
-│ concurrency : unlimited                  │
-│ detect      : body lacks 'login_error'   │
-│ stop        : first hit                  │
-└──────────────────────────────────────────┘
-```
+The panel is a convenience; every flag works directly on the command line, see
+below.
 
 ## How to use
 
@@ -248,6 +259,64 @@ git clone https://github.com/SugarUnded/brute-force-4-me
 cd brute-force-4-me
 pipx install .
 ```
+
+### Windows
+
+Python 3.10+ from https://www.python.org (check "Add python.exe to PATH" during
+install), then clone and install from PowerShell or cmd:
+
+**PowerShell**
+```powershell
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+authprobe
+```
+
+If `Activate.ps1` is blocked ("running scripts is disabled"), run this first and
+try again:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+**Command Prompt**
+```bat
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+py -m venv .venv
+.venv\Scripts\activate.bat
+pip install -e ".[dev]"
+authprobe
+```
+
+The interactive panel needs the `windows-curses` package. Install it once and the
+panel opens:
+```powershell
+.venv\Scripts\pip install windows-curses
+authprobe
+```
+
+Without `windows-curses`, `authprobe` with no arguments prints the plain
+cheat-sheet instead of the panel. The command-line mode is unaffected.
+```
+
+## Updating
+
+Same venv, fresh tree:
+
+```bash
+cd brute-force-4-me
+git pull
+. .venv/bin/activate        # .venv\Scripts\activate.ps1 on Windows
+pip install -e ".[dev]"     # reinstall when deps / entry points change
+```
+
+The package is installed in editable mode, so a `git pull` already picks up code
+changes; you only need the `pip install -e ".[dev]"` line when `pyproject.toml`
+or the entry points change (that's where new deps and the `authprobe` command
+itself are declared).
 
 ## Flags
 
