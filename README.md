@@ -27,61 +27,79 @@ target defends itself, respect it.
 
 ## Install
 
-Requires **Python 3.10+**. `authprobe` only depends on `httpx`, which is pure
-Python, so no compiler is usually needed.
+Requirements everywhere: **Python 3.10+** and **git**. The only runtime
+dependency is `httpx`, which is pure Python, so no compiler is usually needed.
 
-The recommended path on every distro is a virtualenv:
+The general three-step install (clone → venv → pip) works on any distro:
 
 ```bash
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"     # or: pip install -e .
+pip install -e ".[dev]"     # or `pip install -e .` to skip the test extras
 ```
 
-After install the `authprobe` command is on PATH. Without installing, run it as
-a module: `python -m authprobe.cli`.
+After that the `authprobe` command is on your PATH. Without installing, run it
+as a module: `python -m authprobe.cli`.
+
+Every block below is **complete and self-contained**: it installs the toolchain,
+clones the repo, and sets up the venv. Swap the final line to `pip install -e .`
+if you don't need the dev/test extras.
 
 ### Debian / Ubuntu / Mint / Kali (apt)
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip
+sudo apt install -y git python3 python3-venv python3-pip
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### Arch / Manjaro / EndeavourOS (pacman)
 
 ```bash
-sudo pacman -Syu --needed python python-pip python-virtualenv
+sudo pacman -Syu --needed git python python-pip python-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-> Arch's system Python is "externally managed". Do **not** `pip install` globally
-> without `--break-system-packages`; use the venv above (or `pipx install .`).
+> Arch's system Python is "externally managed": never `pip install` globally
+> without `--break-system-packages`. Use the venv above, or `pipx`.
 
 ### Fedora / RHEL / CentOS Stream (dnf)
 
 ```bash
-sudo dnf install -y python3 python3-pip python3-virtualenv
+sudo dnf install -y git python3 python3-pip python3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### openSUSE (zypper)
 
 ```bash
-sudo zypper install -y python311 python311-pip python311-virtualenv
+sudo zypper install -y git python311 python311-pip python311-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python3.11 -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
+
+> On older openSUSE baselines use `python3` in place of `python311`.
 
 ### Alpine Linux (apk)
 
 ```bash
-sudo apk add python3 py3-pip py3-virtualenv git
+sudo apk add git python3 py3-pip py3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 > Alpine uses musl. `httpx` and its deps are pure Python, so no build toolchain
@@ -89,48 +107,54 @@ pip install -e .
 
 ### Termux (Android)
 
-`pkg` is Termux's own package manager (apt-based, but separate from a distro).
+`pkg` is Termux's own package manager (separate from any distro):
 
 ```bash
 pkg update && pkg upgrade -y
-pkg install -y python git clang libffi openssl rust
+pkg install -y git python clang libffi openssl rust
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 python -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### Alpine inside Termux (proot-distro)
 
-Runs a real Alpine rootfs on Android without touching the host.
+A real Alpine rootfs on Android, without touching the host:
 
 ```bash
-pkg install -y proot-distro git
+pkg install -y git proot-distro
 proot-distro install alpine
 proot-distro login alpine
-# ---- inside Alpine ----
-apk add python3 py3-pip py3-virtualenv git
-git clone https://github.com/SugarUnded/brute-force-4-me authprobe
-cd authprobe && python3 -m venv .venv && . .venv/bin/activate
-pip install -e .
+# ---- now inside Alpine ----
+apk add git python3 py3-pip py3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-### Arch inside Termux (proot-distro, pacman)
+### Arch inside Termux (proot-distro)
 
 ```bash
-pkg install -y proot-distro git
+pkg install -y git proot-distro
 proot-distro install archlinux
 proot-distro login archlinux
-# ---- inside Arch ----
-pacman -Syu --needed python python-pip git
-git clone https://github.com/SugarUnded/brute-force-4-me authprobe
-cd authprobe && python -m venv .venv && . .venv/bin/activate
-pip install -e .
+# ---- now inside Arch ----
+pacman -Syu --needed git python python-pip
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-### Isolated install anywhere (pipx)
+### Isolated CLI install (pipx)
 
-For a CLI you do not want polluting any environment:
+Keeps `authprobe` off every other environment:
 
 ```bash
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
 pipx install .
 authprobe --list-presets
 ```
