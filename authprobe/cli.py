@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from . import banner
 from .engine import Attempt, ProbeConfig, run_probe
 from .presets import get_preset, list_presets
 
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--follow-redirects", action="store_true")
     p.add_argument("--no-stop", action="store_true", help="keep going after a hit")
     p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--no-banner", action="store_true", help="hide the ASCII banner")
     p.add_argument("--json", help="write results to this JSON file")
     return p
 
@@ -137,6 +139,14 @@ def _build_config(args: argparse.Namespace) -> ProbeConfig:
     )
 
 
+def _describe_detection(cfg: ProbeConfig) -> str:
+    if cfg.success_body_contains is not None:
+        return f"body has {cfg.success_body_contains!r}"
+    if cfg.failure_body_contains is not None:
+        return f"body lacks {cfg.failure_body_contains!r}"
+    return "status in " + ",".join(str(s) for s in cfg.success_status)
+
+
 async def _run(args: argparse.Namespace) -> int:
     cfg = _build_config(args)
 
@@ -146,33 +156,53 @@ async def _run(args: argparse.Namespace) -> int:
         raise SystemExit(f"wordlist {args.wordlist!r} is empty")
 
     total = len(usernames) * len(passwords)
+    color = banner.supports_color(sys.stderr)
     state = {"done": 0}
 
     def on_attempt(attempt: Attempt) -> None:
         state["done"] += 1
         if args.quiet:
             return
-        marker = "HIT " if attempt.success else "    "
+        marker = banner.colorize("HIT ", banner.BGREEN, color) if attempt.success else "----"
         sys.stderr.write(
-            f"\r{marker}{state['done']}/{total} "
+            f"\r{marker} {state['done']}/{total} "
             f"{attempt.username}:{attempt.password} -> {attempt.status}   "
         )
         sys.stderr.flush()
 
-    if not args.quiet:
-        sys.stderr.write(f"probing {cfg.url}  ({total} candidates, c={cfg.concurrency}, r={cfg.rate})\n")
+    if not args.quiet and not args.no_banner:
+        banner.print_banner(sys.stderr, color=color)
+        banner.print_panel(
+            "authprobe",
+            [
+                ("target", cfg.url),
+                ("method", cfg.method),
+                ("fields", f"{cfg.username_field} / {cfg.password_field}"),
+                ("candidates", f"{total}  ({len(usernames)} user x {len(passwords)} pass)"),
+                ("concurrency", str(cfg.concurrency)),
+                ("rate", "unlimited" if cfg.rate <= 0 else f"{cfg.rate}/s"),
+                ("detect", _describe_detection(cfg)),
+                ("stop", "first hit" if cfg.stop_on_success else "scan all"),
+            ],
+            sys.stderr,
+            color=color,
+        )
+        sys.stderr.write("\n")
 
     found = await run_probe(cfg, usernames, passwords, on_attempt=on_attempt)
 
     if not args.quiet:
         sys.stderr.write("\n")
 
+    out_color = banner.supports_color(sys.stdout)
     if found:
-        print(f"\n[+] {len(found)} valid credential(s):")
+        header = f"[+] {len(found)} valid credential(s):"
+        print("\n" + banner.colorize(header, banner.BGREEN, out_color))
         for hit in found:
-            print(f"    {hit.username}:{hit.password}  (status {hit.status})")
+            line = f"    {hit.username}:{hit.password}  (status {hit.status})"
+            print(banner.colorize(line, banner.BGREEN, out_color))
     else:
-        print("[-] no valid credentials found")
+        print(banner.colorize("[-] no valid credentials found", banner.BYELLOW, out_color))
 
     if args.json:
         payload = {

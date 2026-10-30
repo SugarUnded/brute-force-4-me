@@ -11,6 +11,8 @@ you own or are authorized in writing to test.
   body, or a failure marker that must disappear.
 - **Detection presets** for common logins: generic form, WordPress, Joomla,
   Django admin, JSON API.
+- A big **SUGAR** ASCII banner plus a boxed config panel and a live progress
+  line on startup.
 - Stops at the first valid credential (or keeps going with `--no-stop`).
 - JSON report output.
 
@@ -164,6 +166,45 @@ List the built-in presets:
 authprobe --list-presets
 ```
 
+### Interface
+
+On launch you get the **SUGAR** banner, a panel summarizing the run, and a live
+progress line (a green `HIT` on a match):
+
+```
+███████╗██╗   ██╗ ██████╗  █████╗ ██████╗
+██╔════╝██║   ██║██╔════╝ ██╔══██╗██╔══██╗
+███████╗██║   ██║██║  ███╗███████║██████╔╝
+╚════██║██║   ██║██║   ██║██╔══██║██╔══██╗
+███████║╚██████╔╝╚██████╔╝██║  ██║██║  ██║
+╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+ login auditor  //  brute-force by Sugar
+
+┌────────────────────────────────────────────┐
+│ authprobe                                  │
+├────────────────────────────────────────────┤
+│ target      : https://example.test/login   │
+│ rate        : 5.0/s                        │
+│ detect      : body lacks 'login_error'     │
+└────────────────────────────────────────────┘
+```
+
+Notes:
+
+- The banner, panel, and progress go to **stderr**, so `stdout` stays clean for
+  the result summary and `--json`.
+- `--no-banner` (or `-q`) hides the banner; `-q` also silences the progress line.
+- The banner degrades gracefully: on a non-UTF-8 terminal it uses a plain
+  `#`-based font, and it drops colors automatically when output is not a TTY.
+
+Environment switches:
+
+| Variable | Effect |
+|----------|--------|
+| `NO_COLOR=1` | disable colors |
+| `FORCE_COLOR=1` | force colors even when not a TTY (e.g. piping through `less -R`) |
+| `AUTHPROBE_ASCII=plain` | force the plain ASCII logo |
+
 ### Key flags
 
 | Flag | Meaning |
@@ -245,8 +286,8 @@ pytest
 ```
 
 Tests cover detection logic, the rate limiter, hit/no-hit runs, the progress
-hook, HTTP-error tolerance, JSON-body mode, the presets, and a concurrency
-deadlock regression.
+hook, HTTP-error tolerance, JSON-body mode, the presets, the ASCII banner/panel
+rendering and its env switches, and a concurrency deadlock regression.
 
 ## Legal
 
