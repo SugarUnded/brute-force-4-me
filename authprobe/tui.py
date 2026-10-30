@@ -9,21 +9,28 @@ falls back to the plain cheat-sheet.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Optional
 
+from . import banner
 from .presets import PRESETS, Preset
 
 __all__ = [
     "PanelState",
     "TuiUnavailable",
     "run_tui",
+    "logo_lines",
+    "LOGO_WIDTH",
     "PRESET_ORDER",
     "PRESET_CYCLE",
     "CONCURRENCY_CYCLE",
     "TIMEOUT_CYCLE",
     "FIELD_ORDER",
 ]
+
+LOGO_WIDTH = max(len(row) for row in banner._BLOCK)   # 41
+TAGLINE = " login auditor  //  brute-force by Sugar"
 
 # generic-form first, then the rest; the panel cycles in this order
 PRESET_ORDER = ["generic-form", "wp-login", "joomla-admin", "django-admin", "json-api"]
@@ -281,6 +288,35 @@ def _put_label(stdscr, y: int, label: str, value: str, attr: int, width: int) ->
     _put(stdscr, y, 14, value, attr, width)
 
 
+def _stdout_supports_unicode() -> bool:
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        "█".encode(encoding)
+        return True
+    except (UnicodeEncodeError, LookupError):
+        return False
+
+
+def logo_lines(width: int, height: int, unicode_ok: bool = True) -> Optional[list[str]]:
+    """The SUGAR logo rows when the terminal has room for them, else None."""
+    if width < LOGO_WIDTH + 4 or height < 14:
+        return None
+    return banner._BLOCK if unicode_ok else banner._PLAIN
+
+
+def _draw_logo(stdscr, width: int, height: int) -> int:
+    """Draw the logo + tagline at the top. Returns the next free row."""
+    rows = logo_lines(width, height, _stdout_supports_unicode())
+    attr = curses.color_pair(_TITLE) | curses.A_BOLD
+    if rows is None:
+        _put(stdscr, 0, 2, "authprobe", attr, width)
+        return 2
+    for i, line in enumerate(rows):
+        _put(stdscr, i, 2, line, attr, width)
+    _put(stdscr, len(rows), 2, TAGLINE, curses.A_DIM, width)
+    return len(rows) + 2
+
+
 def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[PanelState]:
     curses.curs_set(0)
     stdscr.keypad(True)
@@ -309,8 +345,7 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
     while True:
         h, w = stdscr.getmaxyx()
         stdscr.erase()
-        _put(stdscr, 0, 2, "authprobe", curses.color_pair(_TITLE) | curses.A_BOLD, w)
-        _put(stdscr, 0, 12, "  login auditor  //  brute-force by Sugar", curses.A_DIM, w)
+        top = _draw_logo(stdscr, w, h)
 
         for i, (label, key) in enumerate(rows):
             value = state.display(key)
@@ -329,9 +364,9 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
                     value = value[:cur] + "▏" + value[cur:]
 
             attr = curses.color_pair(_FOCUS) if key == focus else curses.A_NORMAL
-            _put_label(stdscr, 2 + i, label, f"{value}{extra}", attr, w)
+            _put_label(stdscr, top + i, label, f"{value}{extra}", attr, w)
 
-        y = 2 + len(rows) + 1
+        y = top + len(rows) + 1
         if errors:
             for i, err in enumerate(errors[:3]):
                 _put(stdscr, y + i, 2, "x " + err, curses.color_pair(_ERR) | curses.A_BOLD, w)
@@ -473,21 +508,22 @@ def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
 
         h, w = stdscr.getmaxyx()
         stdscr.erase()
-        _put(stdscr, 0, 2, "authprobe", curses.color_pair(_TITLE) | curses.A_BOLD, w)
-        _put(stdscr, 0, 12, f"  {cfg.url}", curses.A_DIM, w)
+        top = _draw_logo(stdscr, w, h)
+        _put(stdscr, top, 2, cfg.url, curses.A_DIM, w)
+        base = top + 2
 
         elapsed = max(time.monotonic() - prog.started, 1e-6)
         rate = prog.done / elapsed
         bar_w = max(10, min(60, w - 30))
         filled = 0 if not prog.total else int(bar_w * prog.done / prog.total)
         bar = "#" * filled + "-" * (bar_w - filled)
-        _put(stdscr, 3, 2, f"[{bar}]", curses.color_pair(_OK), w)
-        _put(stdscr, 4, 2, f"{prog.done}/{prog.total}   {len(prog.hits)} hit(s)   {rate:.0f} req/s", 0, w)
-        _put(stdscr, 5, 2, f"concurrency: {state.display('concurrency')}   timeout: {state.display('timeout')}", curses.A_DIM, w)
-        _put(stdscr, 7, 2, prog.last, curses.A_DIM, w)
+        _put(stdscr, base, 2, f"[{bar}]", curses.color_pair(_OK), w)
+        _put(stdscr, base + 1, 2, f"{prog.done}/{prog.total}   {len(prog.hits)} hit(s)   {rate:.0f} req/s", 0, w)
+        _put(stdscr, base + 2, 2, f"concurrency: {state.display('concurrency')}   timeout: {state.display('timeout')}", curses.A_DIM, w)
+        _put(stdscr, base + 4, 2, prog.last, curses.A_DIM, w)
 
         for i, hit in enumerate(prog.hits[-5:]):
-            _put(stdscr, 9 + i, 2, f"HIT  {hit.username}:{hit.password} -> {hit.status}",
+            _put(stdscr, base + 6 + i, 2, f"HIT  {hit.username}:{hit.password} -> {hit.status}",
                  curses.color_pair(_OK) | curses.A_BOLD, w)
 
         _put(stdscr, h - 1, 0, " Esc cancela ", curses.color_pair(_DIM), w)

@@ -102,6 +102,53 @@ authprobe https://example.test/login --user admin -w words.txt --json report.jso
 `authprobe --list-presets` prints the built-ins: `generic-form`, `wp-login`,
 `joomla-admin`, `django-admin`, `json-api`.
 
+### The wordlist (`words.txt`)
+
+`-w` reads a file with one password per line. Blank lines and any line starting
+with `#` are skipped, so you can keep notes in the same file:
+
+```
+# admin passwords
+123456
+password
+letmein
+```
+
+The path is just a shell/file argument, so the form is different where the shell
+eats backslashes.
+
+**Linux (bash/zsh/fish) / macOS / Termux / WSL**
+```bash
+authprobe https://h/login --user admin -w words.txt
+authprobe https://h/login --user admin -w ~/wordlists/rockyou.txt
+authprobe https://h/login --user admin -w /etc/share/wordlists/rockyou.txt
+```
+`~` expands, and forward slashes are always safe.
+
+**Windows — PowerShell**
+Backslashes in PowerShell get treated as escape characters inside quotes, so use
+**forward slashes** or quote carefully:
+```powershell
+authprobe https://h/login --user admin -w .\words.txt
+authprobe https://h/login --user admin -w C:/Users/you/wordlists/rockyou.txt
+authprobe https://h/login --user admin -w "C:\Users\you\wordlists\rockyou.txt"
+```
+Inside the panel, type the path with forward slashes — the panel counts the
+passwords live as you type.
+
+**Windows — Command Prompt (cmd.exe)**
+```bat
+authprobe https://h/login --user admin -w words.txt
+authprobe https://h/login --user admin -w C:\Users\you\wordlists\rockyou.txt
+```
+
+**Getting a real wordlist.** Arch doesn't ship rockyou in the official repos;
+on Arch/Manjaro/CachyOS it's `seclists` from the AUR (`pacman -S seclists` with
+an AUR helper, or clone
+https://github.com/danielmiessler/SecLists). On Kali it's already there at
+`/usr/share/wordlists/rockyou.txt`. Start with a small file to confirm the marker,
+then scale up.
+
 ### Getting the marker right
 
 Detection matters more than speed. A redirect on success is

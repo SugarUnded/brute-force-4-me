@@ -198,6 +198,32 @@ def test_wordlist_count_skips_comments_and_blanks(tmp_path):
     assert wordlist_count(str(tmp_path / "missing.txt")) is None
 
 
+def test_logo_lines_none_when_terminal_too_small():
+    from authprobe.tui import logo_lines
+
+    assert logo_lines(40, 30) is None   # too narrow
+    assert logo_lines(120, 10) is None  # too short
+
+
+def test_logo_lines_match_banner_module_not_a_copy():
+    from authprobe.tui import logo_lines, LOGO_WIDTH
+
+    rows = logo_lines(120, 30)
+    assert rows is not None
+    assert {len(r) for r in rows} == {LOGO_WIDTH}
+    # same object as banner._BLOCK — single source of truth
+    from authprobe import banner
+    assert rows is banner._BLOCK
+
+
+def test_logo_lines_plain_fallback_has_no_box_glyphs():
+    from authprobe.tui import logo_lines
+
+    rows = logo_lines(120, 30, unicode_ok=False)
+    assert rows is not None
+    assert all(ch in "# " for row in rows for ch in row)
+
+
 def test_build_argv_parses_into_expected_config(tmp_path):
     from authprobe.cli import _build_config, build_parser
 
