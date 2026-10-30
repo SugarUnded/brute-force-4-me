@@ -316,8 +316,3 @@ pytest
 Tests cover detection logic, the rate limiter, hit/no-hit runs, the progress
 hook, HTTP-error tolerance, JSON-body mode, the presets, the ASCII banner/panel
 rendering and its env switches, and a concurrency deadlock regression.
-
-## Legal
-
-Use only against systems you own or have explicit written permission to test.
-Unauthorized access to computer systems is illegal in most jurisdictions.
