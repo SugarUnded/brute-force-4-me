@@ -2,16 +2,39 @@
 
 Everything above `run_tui()` is plain Python on purpose: the field cycles, the
 validation and the argv builder are testable without a terminal. `curses` is
-imported inside `run_tui()` only, so on a platform without it (Windows, unless
-`windows-curses` is installed) the rest of the package still imports and the CLI
-falls back to the plain cheat-sheet.
-"""
+imported at module level with a graceful fallback on platforms without it
+(Windows without `windows-curses`); the screen functions then use it freely,
+and the CLI fallback (no TTY, or Windows without curses) prints the cheat-sheet
+instead.
 
+Modules
+-------
+- `tui.py`: pure `PanelState` logic, `run_tui()` (curses UI), colour helpers.
+- `test_tui.py`: 20+ tests (preset cycles, concurrency/timeout cycles, edit,
+  validation, argv build, logo geometry, wordlist count).
+- `cli.py`: `main()` delegates to `_run_tui()` when called with no args on a TTY;
+  otherwise prints the cheat-sheet.
+
+Dependencies
+------------
+- ``httpx>=0.27`` (for the HTTP probe engine).
+- ``pytest`` + ``pytest-asyncio`` only in ``dev`` extra (for the test suite).
+- ``windows-curses`` (optional; on Windows it provides the `curses` package,
+  otherwise the TUI silently falls back to the cheat-sheet).
+
+"""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 from typing import Optional
+
+try:                                   # windows-curses makes this importable on Windows
+    import curses as _curses
+    _HAVE_CURSES = True
+except ImportError:                    # Windows without windows-curses
+    _curses = None                     # type: ignore[assignment]
+    _HAVE_CURSES = False
 
 from . import banner
 from .presets import PRESETS, Preset
@@ -58,6 +81,12 @@ FIELD_ORDER = [
 
 TEXT_FIELDS = {"target", "user", "wordlist", "success_status", "failure_body", "success_body"}
 CYCLE_FIELDS = {"preset", "concurrency", "timeout"}
+
+try:                                   # some terminals may not support unicode block chars
+    "█".encode("utf-8")
+    _UNICODE_OK = True
+except (UnicodeEncodeError, LookupError):
+    _UNICODE_OK = False
 
 
 class TuiUnavailable(RuntimeError):
@@ -135,8 +164,8 @@ class PanelState:
     def edit_field(self, name: str, ch: str) -> None:
         """Apply one keystroke to a text field.
 
-        Printable characters insert at the cursor; `\\x7f`/`\\b` deletes behind
-        it; `\\x01`/`\\x05` jump to start/end; `\\x15` clears the line.
+        Printable characters insert at the cursor; ``\\x7f`` / ``\\b`` deletes
+        behind it; ``\\x01`` jumps to start; ``\\x05`` jumps to end; ``\\x15`` clears.
         """
         text = getattr(self, name) or ""
         cur = min(self._cursors.get(name, len(text)), len(text))
@@ -224,55 +253,6 @@ class PanelState:
 
 # --- curses layer ---------------------------------------------------------
 
-def run_tui() -> int:
-    """Open the panel, run the probe, print the results. Returns an exit code."""
-    try:
-        import curses
-    except ImportError as exc:  # pragma: no cover - Windows without windows-curses
-        raise TuiUnavailable(str(exc)) from exc
-
-    try:
-        state = curses.wrapper(_config_screen)
-        if state is None:
-            return 0
-
-        while True:
-            hits = curses.wrapper(_progress_screen, state)
-            if hits is None:
-                state = curses.wrapper(_config_screen, state)
-                if state is None:
-                    return 0
-                continue
-
-            action = curses.wrapper(_results_screen, state, hits)
-            if action != "again":
-                return 0 if hits else 1
-            state = curses.wrapper(_config_screen, state)
-            if state is None:
-                return 0
-    except KeyboardInterrupt:
-        return 130
-
-
-# color pair ids
-_FOCUS, _TITLE, _LABEL, _OK, _DIM, _ERR = range(1, 7)
-
-
-def _init_colors(curses) -> None:
-    curses.start_color()
-    try:
-        curses.use_default_colors()
-        bg = -1
-    except curses.error:  # pragma: no cover - exotic terminals
-        bg = curses.COLOR_BLACK
-    curses.init_pair(_FOCUS, curses.COLOR_BLACK, curses.COLOR_CYAN)
-    curses.init_pair(_TITLE, curses.COLOR_RED, bg)
-    curses.init_pair(_LABEL, curses.COLOR_CYAN, bg)
-    curses.init_pair(_OK, curses.COLOR_GREEN, bg)
-    curses.init_pair(_DIM, curses.COLOR_YELLOW, bg)
-    curses.init_pair(_ERR, curses.COLOR_RED, bg)
-
-
 def _put(stdscr, y: int, x: int, text: str, attr: int = 0, width: Optional[int] = None) -> None:
     """Write a line, clipped, swallowing the bottom-right corner error."""
     try:
@@ -284,7 +264,7 @@ def _put(stdscr, y: int, x: int, text: str, attr: int = 0, width: Optional[int] 
 
 
 def _put_label(stdscr, y: int, label: str, value: str, attr: int, width: int) -> None:
-    _put(stdscr, y, 2, f"{label:<12}", curses.color_pair(_LABEL) | curses.A_BOLD, width)
+    _put(stdscr, y, 2, f"{label:<12}", curses.color_pair(1) | curses.A_BOLD, width)
     _put(stdscr, y, 14, value, attr, width)
 
 
@@ -305,24 +285,22 @@ def logo_lines(width: int, height: int, unicode_ok: bool = True) -> Optional[lis
 
 
 def _draw_logo(stdscr, width: int, height: int) -> int:
-    """Draw the logo + tagline at the top. Returns the next free row."""
+    """Draw the SUGAR logo + tagline at the top. Returns the next free row."""
     rows = logo_lines(width, height, _stdout_supports_unicode())
-    attr = curses.color_pair(_TITLE) | curses.A_BOLD
+    attr = _curses.color_pair(1) | _curses.A_BOLD if _HAVE_CURSES else 0
     if rows is None:
         _put(stdscr, 0, 2, "authprobe", attr, width)
         return 2
     for i, line in enumerate(rows):
         _put(stdscr, i, 2, line, attr, width)
-    _put(stdscr, len(rows), 2, TAGLINE, curses.A_DIM, width)
+    _put(stdscr, len(rows), 2, TAGLINE, _curses.A_DIM, width) if _HAVE_CURSES else None
     return len(rows) + 2
 
 
 def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[PanelState]:
-    import curses
-
-    curses.curs_set(0)
-    stdscr.keypad(True)
-    _init_colors(curses)
+    _curses.curs_set(0)
+    _curses.stdscr.keypad(True)
+    _init_colors(_curses)
 
     if state is None:
         state = PanelState()
@@ -345,9 +323,9 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
     keys = [k for _, k in rows]
 
     while True:
-        h, w = stdscr.getmaxyx()
-        stdscr.erase()
-        top = _draw_logo(stdscr, w, h)
+        h, w = _curses.stdscr.getmaxyx()
+        _curses.stdscr.erase()
+        top = _draw_logo(_curses.stdscr, w, h)
 
         for i, (label, key) in enumerate(rows):
             value = state.display(key)
@@ -365,56 +343,56 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
                 if key == focus:
                     value = value[:cur] + "▏" + value[cur:]
 
-            attr = curses.color_pair(_FOCUS) if key == focus else curses.A_NORMAL
-            _put_label(stdscr, top + i, label, f"{value}{extra}", attr, w)
+            attr = _curses.color_pair(2) if key == focus else _curses.A_NORMAL
+            _put_label(_curses.stdscr, 2 + i, label, f"{value}{extra}", attr, w)
 
-        y = top + len(rows) + 1
+        y = 2 + len(rows) + 1
         if errors:
             for i, err in enumerate(errors[:3]):
-                _put(stdscr, y + i, 2, "x " + err, curses.color_pair(_ERR) | curses.A_BOLD, w)
+                _put(_curses.stdscr, y + i, 2, "x " + err, _curses.color_pair(3) | _curses.A_BOLD, w)
             y += min(3, len(errors)) + 1
 
-        _put(stdscr, y, 2, "[ Start ]", curses.color_pair(_OK) | curses.A_BOLD, w)
-        _put(stdscr, y, 13, "[ Quit ]", curses.A_DIM, w)
+        _put(_curses.stdscr, y, 2, "[ Start ]", _curses.color_pair(4) | _curses.A_BOLD, w)
+        _put(_curses.stdscr, y, 13, "[ Quit ]", _curses.A_DIM, w)
 
         footer = " Tab/↑↓ navega · ◄► gira · digite pra editar · Enter roda · Esc sai "
-        _put(stdscr, h - 1, 0, footer, curses.color_pair(_DIM), w)
+        _put(_curses.stdscr, h - 1, 0, footer, _curses.color_pair(5), w)
 
-        stdscr.refresh()
-        key = stdscr.getch()
+        _curses.stdscr.refresh()
+        key = _curses.stdscr.getch()
 
-        if key == curses.KEY_RESIZE:
+        if key == _curses.KEY_RESIZE:
             continue
         if key in (27,):                      # Esc
             return None
-        if key in (10, 13, curses.KEY_ENTER):
+        if key in (10, 13, _curses.KEY_ENTER):
             errors = state.validate()
             if not errors:
                 return state
             continue
-        if key == curses.KEY_TAB:
+        if key == _curses.KEY_TAB:
             focus = keys[(keys.index(focus) + 1) % len(keys)]
             errors = []
             continue
-        if key == curses.KEY_BTAB:
+        if key == _curses.KEY_BTAB:
             focus = keys[(keys.index(focus) - 1) % len(keys)]
             errors = []
             continue
-        if key == curses.KEY_UP:
+        if key == _curses.KEY_UP:
             focus = keys[(keys.index(focus) - 1) % len(keys)]
             errors = []
             continue
-        if key == curses.KEY_DOWN:
+        if key == _curses.KEY_DOWN:
             focus = keys[(keys.index(focus) + 1) % len(keys)]
             errors = []
             continue
 
         if focus in CYCLE_FIELDS:
-            if key == curses.KEY_RIGHT:
+            if key == _curses.KEY_RIGHT:
                 getattr(state, f"cycle_{focus}")(1)
                 if focus == "preset":
                     state.apply_preset()
-            elif key == curses.KEY_LEFT:
+            elif key == _curses.KEY_LEFT:
                 getattr(state, f"cycle_{focus}")(-1)
                 if focus == "preset":
                     state.apply_preset()
@@ -423,13 +401,13 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
             continue
 
         # text field
-        if key in (curses.KEY_BACKSPACE, 127, 8):
+        if key in (_curses.KEY_BACKSPACE, 127, 8):
             state.edit_field(focus, "\x7f")
-        elif key == curses.KEY_DC:
+        elif key == _curses.KEY_DC:
             state.edit_field(focus, "\x7f")
-        elif key == curses.KEY_HOME or key == 1:
+        elif key == _curses.KEY_HOME or key == 1:
             state.edit_field(focus, "\x01")
-        elif key == curses.KEY_END or key == 5:
+        elif key == _curses.KEY_END or key == 5:
             state.edit_field(focus, "\x05")
         elif key == 21:                        # ctrl-u
             state.edit_field(focus, "\x15")
@@ -438,7 +416,6 @@ def _config_screen(stdscr, state: Optional[PanelState] = None) -> Optional[Panel
 
 
 def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
-    import curses
     import asyncio
     import threading
     import time
@@ -499,20 +476,20 @@ def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
 
-    curses.curs_set(0)
-    stdscr.nodelay(True)
-    stdscr.keypad(True)
-    _init_colors(curses)
+    _curses.curs_set(0)
+    _curses.stdscr.nodelay(True)
+    _curses.stdscr.keypad(True)
+    _init_colors(_curses)
 
     while not prog.finished:
-        ch = stdscr.getch()
+        ch = _curses.stdscr.getch()
         if ch in (27, ord("q"), ord("Q")):
             cancel.set()
 
-        h, w = stdscr.getmaxyx()
-        stdscr.erase()
-        top = _draw_logo(stdscr, w, h)
-        _put(stdscr, top, 2, cfg.url, curses.A_DIM, w)
+        h, w = _curses.stdscr.getmaxyx()
+        _curses.stdscr.erase()
+        top = _draw_logo(_curses.stdscr, w, h)
+        _put(_curses.stdscr, top, 2, cfg.url, _curses.A_DIM, w)
         base = top + 2
 
         elapsed = max(time.monotonic() - prog.started, 1e-6)
@@ -520,66 +497,65 @@ def _progress_screen(stdscr, state: PanelState) -> Optional[list]:
         bar_w = max(10, min(60, w - 30))
         filled = 0 if not prog.total else int(bar_w * prog.done / prog.total)
         bar = "#" * filled + "-" * (bar_w - filled)
-        _put(stdscr, base, 2, f"[{bar}]", curses.color_pair(_OK), w)
-        _put(stdscr, base + 1, 2, f"{prog.done}/{prog.total}   {len(prog.hits)} hit(s)   {rate:.0f} req/s", 0, w)
-        _put(stdscr, base + 2, 2, f"concurrency: {state.display('concurrency')}   timeout: {state.display('timeout')}", curses.A_DIM, w)
-        _put(stdscr, base + 4, 2, prog.last, curses.A_DIM, w)
+        _put(_curses.stdscr, base, 2, f"[{bar}]", _curses.color_pair(4), w)
+        _put(_curses.stdscr, base + 1, 2, f"{prog.done}/{prog.total}   {len(prog.hits)} hit(s)   {rate:.0f} req/s", 0, w)
+        _put(_curses.stdscr, base + 2, 2, f"concurrency: {state.display('concurrency')}   timeout: {state.display('timeout')}", _curses.A_DIM, w)
+        _put(_curses.stdscr, base + 4, 2, prog.last, _curses.A_DIM, w)
 
         for i, hit in enumerate(prog.hits[-5:]):
-            _put(stdscr, base + 6 + i, 2, f"HIT  {hit.username}:{hit.password} -> {hit.status}",
-                 curses.color_pair(_OK) | curses.A_BOLD, w)
+            _put(_curses.stdscr, base + 6 + i, 2, f"HIT  {hit.username}:{hit.password} -> {hit.status}",
+                 _curses.color_pair(4) | _curses.A_BOLD, w)
 
-        _put(stdscr, h - 1, 0, " Esc cancela ", curses.color_pair(_DIM), w)
-        stdscr.refresh()
-        curses.napms(80)
+        _put(_curses.stdscr, _curses.LINES - 1, 0, " Esc cancela ", _curses.color_pair(5), w)
+        _curses.stdscr.refresh()
+        _curses.napms(80)
 
     thread.join(timeout=1.0)
-    stdscr.nodelay(False)
+    _curses.stdscr.nodelay(False)
 
     if cancel.is_set():
         return None
     if prog.error:
-        curses.curs_set(0)
-        stdscr.erase()
-        _put(stdscr, 1, 2, "the run failed:", curses.color_pair(_ERR) | curses.A_BOLD)
-        _put(stdscr, 3, 2, prog.error[:500])
-        _put(stdscr, 5, 2, "press any key", curses.A_DIM)
-        stdscr.refresh()
-        stdscr.nodelay(False)
-        stdscr.getch()
+        _curses.curs_set(0)
+        _curses.stdscr.erase()
+        _put(_curses.stdscr, 1, 2, "the run failed:", _curses.color_pair(5) | _curses.A_BOLD)
+        _put(_curses.stdscr, 3, 2, prog.error[:500])
+        _put(_curses.stdscr, 5, 2, "press any key", _curses.A_DIM)
+        _curses.stdscr.refresh()
+        _curses.stdscr.nodelay(False)
+        _curses.stdscr.getch()
         return None
     return prog.hits
 
 
 def _results_screen(stdscr, state: PanelState, hits: list) -> str:
-    import curses
     import json
 
-    curses.curs_set(0)
-    stdscr.keypad(True)
-    _init_colors(curses)
+    _curses.curs_set(0)
+    _curses.stdscr.keypad(True)
+    _init_colors(_curses)
     save_note = ""
 
     while True:
-        h, w = stdscr.getmaxyx()
-        stdscr.erase()
-        _put(stdscr, 0, 2, "authprobe", curses.color_pair(_TITLE) | curses.A_BOLD, w)
-        _put(stdscr, 0, 12, f"  {state.target}", curses.A_DIM, w)
+        h, w = _curses.stdscr.getmaxyx()
+        _curses.stdscr.erase()
+        top = _draw_logo(_curses.stdscr, w, h)
+        _put(_curses.stdscr, top, 2, state.target, _curses.A_DIM, w)
 
         if hits:
-            _put(stdscr, 2, 2, f"{len(hits)} valid credential(s)", curses.color_pair(_OK) | curses.A_BOLD, w)
-            for i, hit in enumerate(hits[: max(1, h - 9)]):
-                _put(stdscr, 4 + i, 2, f"{hit.username}:{hit.password}   ({hit.status})", 0, w)
+            _put(_curses.stdscr, 2, 2, f"{len(hits)} valid credential(s)", _curses.color_pair(4) | _curses.A_BOLD, w)
+            for i, hit in enumerate(hits[: _curses.LINES - 9]):
+                _put(_curses.stdscr, 4 + i, 2, f"{hit.username}:{hit.password}   ({hit.status})", 0, w)
         else:
-            _put(stdscr, 2, 2, "no valid credentials found", curses.color_pair(_DIM) | curses.A_BOLD, w)
+            _put(_curses.stdscr, 2, 2, "no valid credentials found", _curses.color_pair(5) | _curses.A_BOLD, w)
 
         if save_note:
-            _put(stdscr, h - 3, 2, save_note, curses.color_pair(_OK), w)
-        _put(stdscr, h - 1, 0, " Enter roda de novo · s salva JSON · q sai ", curses.color_pair(_DIM), w)
-        stdscr.refresh()
+            _put(_curses.stdscr, h - 3, 2, save_note, _curses.color_pair(4), w)
+        _put(_curses.stdscr, _curses.LINES - 1, 0, " Enter roda de novo · s salva JSON · q sai ", _curses.color_pair(5), w)
+        _curses.stdscr.refresh()
 
-        key = stdscr.getch()
-        if key in (10, 13, curses.KEY_ENTER):
+        key = _curses.stdscr.getch()
+        if key in (10, 13, _curses.KEY_ENTER):
             return "again"
         if key in (27, ord("q"), ord("Q")):
             return "quit"
@@ -598,3 +574,49 @@ def _results_screen(stdscr, state: PanelState, hits: list) -> str:
                 save_note = f"saved {len(hits)} result(s) to {path}"
             except OSError as exc:
                 save_note = f"could not write {path}: {exc}"
+
+
+# --- public entry point ---------------------------------------------------
+
+def run_tui() -> int:
+    """Open the panel, run the probe, print the results. Returns an exit code."""
+    if not _HAVE_CURSES:
+        raise TuiUnavailable("this platform does not have the curses module; "
+                             "install windows-curses on Windows, or run on a real "
+                             "terminal (Linux/macOS/Termux).")
+
+    try:
+        state = _curses.wrapper(_config_screen)
+        if state is None:
+            return 0
+
+        while True:
+            hits = _curses.wrapper(_progress_screen, state)
+            if hits is None:
+                state = _curses.wrapper(_config_screen, state)
+                if state is None:
+                    return 0
+                continue
+
+            action = _curses.wrapper(_results_screen, state, hits)
+            if action != "again":
+                return 0 if hits else 1
+            state = _curses.wrapper(_config_screen, state)
+            if state is None:
+                return 0
+    except KeyboardInterrupt:
+        return 130
+
+
+def _init_colors(curses) -> None:
+    curses.start_color()
+    try:
+        curses.use_default_colors()
+        bg = -1
+    except curses.error:  # pragma: no cover - exotic terminals
+        bg = curses.COLOR_BLACK
+    curses.init_pair(1, curses.COLOR_CYAN, bg)    # focus
+    curses.init_pair(2, curses.COLOR_WHITE, bg)   # label
+    curses.init_pair(3, curses.COLOR_RED, bg)     # error
+    curses.init_pair(4, curses.COLOR_GREEN, bg)    # ok / progress
+    curses.init_pair(5, curses.COLOR_YELLOW, bg)   # dim / footer
