@@ -4,7 +4,7 @@ import urllib.parse
 import httpx
 import pytest
 
-from authprobe.engine import Attempt, ProbeConfig, RateLimiter, is_success, run_probe
+from authprobe.engine import Attempt, ProbeConfig, is_success, run_probe
 
 
 # --- is_success -------------------------------------------------------------
@@ -37,29 +37,30 @@ def test_body_marker_takes_priority_over_status():
     assert is_success(cfg, 302, "nope") is False
 
 
-# --- RateLimiter ------------------------------------------------------------
-
-def test_rate_limiter_spaces_calls():
-    async def go():
-        limiter = RateLimiter(rate=50.0)  # 20ms gap
-        loop = asyncio.get_running_loop()
-        start = loop.time()
-        await limiter.acquire()
-        await limiter.acquire()
-        await limiter.acquire()
-        return loop.time() - start
-
-    elapsed = asyncio.run(go())
-    assert elapsed >= 0.035  # at least two 20ms gaps
+def test_default_is_unlimited():
+    # max power: unlimited concurrency by default, no rate limiter field at all
+    cfg = ProbeConfig(url="http://x")
+    assert cfg.concurrency <= 0
+    assert not hasattr(cfg, "rate")
 
 
-def test_rate_limiter_unlimited_is_free():
-    async def go():
-        limiter = RateLimiter(rate=0.0)
-        await limiter.acquire()
-        await limiter.acquire()
+def test_unlimited_mode_finds_hits():
+    def handler(request: httpx.Request) -> httpx.Response:
+        form = dict(urllib.parse.parse_qsl(request.content.decode()))
+        if form.get("password") == "hit":
+            return httpx.Response(302)
+        return httpx.Response(200, text="Invalid")
 
-    asyncio.run(go())  # should not hang or sleep
+    cfg = ProbeConfig(url="http://target/login", success_status=(302,), concurrency=0)
+    client = _mock_client(handler)
+    try:
+        found = asyncio.run(
+            run_probe(cfg, ["admin"], ["a", "b", "hit", "c", "d"], client=client)
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert [a.password for a in found] == ["hit"]
 
 
 # --- run_probe --------------------------------------------------------------

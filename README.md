@@ -4,200 +4,30 @@
 
 # authprobe
 
-Async HTTP login endpoint auditor. Sends candidate credential pairs against a
-login endpoint and reports which ones are accepted. Built for auditing systems
-you own or are authorized in writing to test.
+Login brute-forcer for web forms. Fires candidate user/pass pairs at one login
+endpoint, async, and reports which ones come back accepted. No captcha solving,
+no lockout bypass, no MFA.
 
-## What it does
-
-- Async, bounded concurrency with an optional requests/sec cap.
-- Configurable success detection: status code, a marker that must appear in the
-  body, or a failure marker that must disappear.
-- **Detection presets** for common logins: generic form, WordPress, Joomla,
-  Django admin, JSON API.
-- A big **SUGAR** ASCII banner plus a boxed config panel and a live progress
-  line on startup.
-- Stops at the first valid credential (or keeps going with `--no-stop`).
-- JSON report output.
-
-It does **not** bypass rate limits, CAPTCHAs, MFA, or account lockouts. If the
-target defends itself, respect it.
-
----
-
-## Install
-
-Requirements everywhere: **Python 3.10+** and **git**. The only runtime
-dependency is `httpx`, which is pure Python, so no compiler is usually needed.
-
-The general three-step install (clone → venv → pip) works on any distro:
+## Quick start
 
 ```bash
 git clone https://github.com/SugarUnded/brute-force-4-me
 cd brute-force-4-me
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"     # or `pip install -e .` to skip the test extras
-```
-
-After that the `authprobe` command is on your PATH. Without installing, run it
-as a module: `python -m authprobe.cli`.
-
-Every block below is **complete and self-contained**: it installs the toolchain,
-clones the repo, and sets up the venv. Swap the final line to `pip install -e .`
-if you don't need the dev/test extras.
-
-### Debian / Ubuntu / Mint / Kali (apt)
-
-```bash
-sudo apt update
-sudo apt install -y git python3 python3-venv python3-pip
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### Arch / Manjaro / EndeavourOS (pacman)
+Then:
 
 ```bash
-sudo pacman -Syu --needed git python python-pip python-virtualenv
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
+authprobe          # opens the interface
+authprobe --help   # every flag
 ```
 
-> Arch's system Python is "externally managed": never `pip install` globally
-> without `--break-system-packages`. Use the venv above, or `pipx`.
+## Open the interface
 
-### Fedora / RHEL / CentOS Stream (dnf)
-
-```bash
-sudo dnf install -y git python3 python3-pip python3-virtualenv
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### openSUSE (zypper)
-
-```bash
-sudo zypper install -y git python311 python311-pip python311-virtualenv
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python3.11 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-> On older openSUSE baselines use `python3` in place of `python311`.
-
-### Alpine Linux (apk)
-
-```bash
-sudo apk add git python3 py3-pip py3-virtualenv
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-> Alpine uses musl. `httpx` and its deps are pure Python, so no build toolchain
-> is needed. If a future dependency compiles, add `build-base`.
-
-### Termux (Android)
-
-`pkg` is Termux's own package manager (separate from any distro):
-
-```bash
-pkg update && pkg upgrade -y
-pkg install -y git python clang libffi openssl rust
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### Alpine inside Termux (proot-distro)
-
-A real Alpine rootfs on Android, without touching the host:
-
-```bash
-pkg install -y git proot-distro
-proot-distro install alpine
-proot-distro login alpine
-# ---- now inside Alpine ----
-apk add git python3 py3-pip py3-virtualenv
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### Arch inside Termux (proot-distro)
-
-```bash
-pkg install -y git proot-distro
-proot-distro install archlinux
-proot-distro login archlinux
-# ---- now inside Arch ----
-pacman -Syu --needed git python python-pip
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### Isolated CLI install (pipx)
-
-Keeps `authprobe` off every other environment:
-
-```bash
-git clone https://github.com/SugarUnded/brute-force-4-me
-cd brute-force-4-me
-pipx install .
-authprobe --list-presets
-```
-
----
-
-## Usage
-
-```bash
-# generic form: redirect (3xx) means success
-authprobe https://example.test/login \
-  --user admin -w wordlists/passwords.txt --success-status 302
-
-# WordPress: field names + failure marker come from the preset
-authprobe https://example.test --preset wp-login -w words.txt
-
-# Joomla admin
-authprobe https://example.test --preset joomla-admin --user admin -w words.txt
-
-# Django admin
-authprobe https://example.test --preset django-admin --user admin -w words.txt
-
-# JSON API: credentials sent as JSON, a "token" in the body means success
-authprobe https://example.test/api/login --preset json-api --user admin -w words.txt
-
-# treat "Invalid credentials" as the failure marker
-authprobe https://example.test/login \
-  --users users.txt -w words.txt --failure-body "Invalid credentials"
-
-# save a report
-authprobe https://example.test/login --user admin -w words.txt --json report.json
-```
-
-List the built-in presets:
-
-```bash
-authprobe --list-presets
-```
-
-### Interface
-
-On launch you get the **SUGAR** banner, a panel summarizing the run, and a live
-progress line (a green `HIT` on a match):
+Run `authprobe` with no arguments and the interface opens: the SUGAR banner
+plus a short cheat-sheet.
 
 ```
 ███████╗██╗   ██╗ ██████╗  █████╗ ██████╗
@@ -208,103 +38,266 @@ progress line (a green `HIT` on a match):
 ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
  login auditor  //  brute-force by Sugar
 
-┌────────────────────────────────────────────┐
-│ authprobe                                  │
-├────────────────────────────────────────────┤
-│ target      : https://example.test/login   │
-│ rate        : 5.0/s                        │
-│ detect      : body lacks 'login_error'     │
-└────────────────────────────────────────────┘
+usage: authprobe <url> --user NAME -w WORDS [options]
+       authprobe --list-presets
+
+examples:
+  authprobe https://host/login --user admin -w words.txt --success-status 302
+  authprobe https://host --preset wp-login -w words.txt
+  authprobe https://host/api/login --preset json-api --user admin -w words.txt
+
+run `authprobe --help` for every flag
 ```
 
-Notes:
+Start a real run and the same banner is followed by a config panel and a live
+progress line (a green `HIT` on a match):
 
-- The banner, panel, and progress go to **stderr**, so `stdout` stays clean for
-  the result summary and `--json`.
-- `--no-banner` (or `-q`) hides the banner; `-q` also silences the progress line.
-- The banner degrades gracefully: on a non-UTF-8 terminal it uses a plain
-  `#`-based font, and it drops colors automatically when output is not a TTY.
+```
+┌──────────────────────────────────────────┐
+│ authprobe                                │
+├──────────────────────────────────────────┤
+│ target      : https://example.test/login │
+│ method      : POST                       │
+│ fields      : username / password        │
+│ candidates  : 5000  (1 user x 5000 pass) │
+│ mode        : MAX POWER (no rate limit)  │
+│ concurrency : unlimited                  │
+│ detect      : body lacks 'login_error'   │
+│ stop        : first hit                  │
+└──────────────────────────────────────────┘
+```
 
-Environment switches:
+## How to use
 
-| Variable | Effect |
-|----------|--------|
-| `NO_COLOR=1` | disable colors |
-| `FORCE_COLOR=1` | force colors even when not a TTY (e.g. piping through `less -R`) |
-| `AUTHPROBE_ASCII=plain` | force the plain ASCII logo |
+```bash
+# plain form, redirect means success
+authprobe https://example.test/login --user admin -w words.txt --success-status 302
 
-### Key flags
+# a preset fills in the field names and the failure marker
+authprobe https://example.test --preset wp-login -w words.txt
+authprobe https://example.test --preset joomla-admin --user admin -w words.txt
+authprobe https://example.test --preset django-admin --user admin -w words.txt
+
+# json login, a "token" in the response means it worked
+authprobe https://example.test/api/login --preset json-api --user admin -w words.txt
+
+# several users, "Invalid credentials" is the failure string
+authprobe https://example.test/login --users users.txt -w words.txt --failure-body "Invalid credentials"
+
+# dump a report
+authprobe https://example.test/login --user admin -w words.txt --json report.json
+```
+
+`authprobe --list-presets` prints the built-ins: `generic-form`, `wp-login`,
+`joomla-admin`, `django-admin`, `json-api`.
+
+### Getting the marker right
+
+Detection matters more than speed. A redirect on success is
+`--success-status 302`. An error string that only shows on failure is the most
+reliable, `--failure-body "..."`. A token or dashboard string on success is
+`--success-body "..."`. When unsure, hit the endpoint once with a good and a bad
+password and diff the two.
+
+## Install per distro
+
+Needs Python 3.10+ and git. The only dependency is httpx, pure python, so you
+rarely need a compiler. Each block installs the toolchain, clones, and sets up
+the venv.
+
+### Debian / Ubuntu / Mint / Kali
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Arch / Manjaro / EndeavourOS
+
+```bash
+sudo pacman -Syu --needed git python python-pip python-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### CachyOS
+
+CachyOS is Arch, so pacman is the same. The one difference is the shell:
+CachyOS ships **fish**, and the venv's `activate` is a bash script. Fish can't
+parse it, so `source .venv/bin/activate` dies:
+
+```
+case "$(uname)" in
+^~~^
+'case' builtin não está dentro de um bloco switch case
+```
+
+That leaves your PATH untouched, so the next `pip` is the system pip and you hit
+Arch's PEP 668 wall:
+
+```
+error: externally-managed-environment
+```
+
+Source the **fish** activate instead (or skip activation completely):
+
+```fish
+sudo pacman -Syu --needed git python python-pip python-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python -m venv .venv
+source .venv/bin/activate.fish     # the plain `activate` will not work here
+pip install -e ".[dev]"
+
+authprobe                          # opens the interface
+```
+
+Or drive the venv directly. This works in any shell and dodges PEP 668:
+
+```fish
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m authprobe.cli   # opens the interface
+```
+
+In bash or zsh, `source .venv/bin/activate` is fine.
+
+### Fedora / RHEL / CentOS Stream
+
+```bash
+sudo dnf install -y git python3 python3-pip python3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### openSUSE
+
+```bash
+sudo zypper install -y git python311 python311-pip python311-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3.11 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+On older openSUSE use `python3` instead of `python311`.
+
+### Alpine Linux
+
+```bash
+sudo apk add git python3 py3-pip py3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Alpine is musl but httpx and friends are pure python, so no build toolchain. If
+something ever needs to compile, add `build-base`.
+
+### Termux (Android)
+
+```bash
+pkg update && pkg upgrade -y
+pkg install -y git python clang libffi openssl rust
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Alpine inside Termux
+
+```bash
+pkg install -y git proot-distro
+proot-distro install alpine
+proot-distro login alpine
+# now inside alpine
+apk add git python3 py3-pip py3-virtualenv
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Arch inside Termux
+
+```bash
+pkg install -y git proot-distro
+proot-distro install archlinux
+proot-distro login archlinux
+# now inside arch
+pacman -Syu --needed git python python-pip
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### pipx
+
+```bash
+git clone https://github.com/SugarUnded/brute-force-4-me
+cd brute-force-4-me
+pipx install .
+```
+
+## Flags
 
 | Flag | Meaning |
 |------|---------|
-| `--preset NAME` | detection preset (see `--list-presets`) |
-| `--user` / `--users` | one username, or a file of usernames |
-| `-w, --wordlist` | password list (blank lines and `#comments` skipped) |
-| `--user-field` / `--pass-field` | form field names (preset defaults, overridable) |
+| `--preset NAME` | detection preset (`--list-presets`) |
+| `--user` / `--users` | one username or a file of them |
+| `-w, --wordlist` | password list, blank lines and `#` comments skipped |
+| `--user-field` / `--pass-field` | form field names |
 | `--success-status` | comma-separated codes that mean success |
 | `--success-body` | substring that must be present on success |
 | `--failure-body` | substring that must be absent on success |
-| `--json-body` | send credentials as a JSON body |
-| `-c, --concurrency` | parallel in-flight requests (default 10) |
-| `-r, --rate` | max requests/sec (`0` = unlimited, default) |
-| `-t, --timeout` | per-request timeout in seconds (default 10) |
-| `-H K:V`, `-d K:V` | extra headers / static form fields |
-| `--no-stop` | keep probing after the first hit |
-| `--json FILE` | write machine-readable results |
+| `--json-body` | send the pair as JSON |
+| `-c, --concurrency` | parallel requests, `0` = unlimited (default) |
+| `-t, --timeout` | per-request timeout (default 10) |
+| `-H K:V`, `-d K:V` | extra headers / form fields |
+| `--no-stop` | keep going after a hit |
+| `--json FILE` | write results to a file |
 
-Exit code is `0` when at least one credential is valid, `1` otherwise.
-
----
+Exit code 0 if at least one pair worked, 1 if not.
 
 ## Tuning
 
-Two knobs govern load: `-c` (how many requests are in flight at once) and `-r`
-(how many are *started* per second). `-r` is the real safety valve — it spaces
-requests out and is honored even when `-c` is high.
+No rate limiter, and concurrency is unlimited by default: every candidate goes
+out at once. The httpx pool is opened to match, so the only real ceiling is your
+file-descriptor limit. On a big wordlist that is a lot of sockets, so check
+`ulimit -n` first (a stock 1024 will choke).
 
-**Start low, watch the target, then climb.** A safe ladder:
+Cap it with `-c N` when you want to be gentle:
 
-| Situation | Suggested | Why |
-|-----------|-----------|-----|
-| Production site you also serve to users | `-c 4 -r 3` | keeps it under your own traffic |
-| Staging / dedicated box | `-c 10 -r 20` | fast but not saturating |
-| Localhost / throwaway container | `-c 50 -r 0` | no reason to be gentle |
-| Target has lockout / WAF | `-c 1 -r 0.5` | one every two seconds |
+| Target | `-c` |
+|--------|------|
+| A site you also serve real users on | 16 |
+| Staging or a box that's yours | 128 |
+| Localhost or a throwaway container | 512 |
+| Something with lockout or a WAF | 1 to 4 |
 
-Rules of thumb:
+Bump `-t` for slow hosts, lower it on flaky links. `--no-stop` only matters in
+capped mode; in unlimited mode everything is already out. Reading the response:
+`429`/`503` means you're being throttled, drop `-c`. Rising latency means you're
+the flood. The same instant response for every candidate usually means a WAF is
+answering and your marker is meaningless, so check with a manual `curl` first.
 
-- **Default `-r 0` is unlimited** — on a real site that is a self-inflicted DoS.
-  Always pass `-r` unless you own the box outright.
-- Raise `-t` (e.g. `-t 20`) for slow hosts; lower it to fail fast on unreliable
-  networks.
-- `-c` above ~64 rarely helps a single endpoint; the server becomes the limit.
-- Large wordlists: keep `-r` set and use `--no-stop` only when you must find
-  *every* valid pair (e.g. checking many users).
+## Notes on output
 
-### Reading the target's response
-
-- **`429` or `503` showing up** → you are being throttled. Drop `-r`, raise the
-  gap, or stop.
-- **Connection resets / timeouts spiking** → back off `-c` and `-r`.
-- **Latency climbing steadily** → saturating the box, likely your own. Lower both.
-- **Same response for every candidate, instantly** → probably a WAF answering
-  for the app; your detection markers are useless, re-check with `--verbose`
-  style manual `curl` first.
-
-### Detection markers
-
-Getting the success signal right matters more than speed:
-
-- Redirect on success → `--success-status 302` (or use `--preset generic-form`).
-- Error string on failure → `--failure-body "Invalid credentials"` (most robust;
-  a success page simply won't contain it).
-- Token/banner on success → `--success-body '"token"'` or the presence of a
-  dashboard string.
-
-When unsure, hit the endpoint once with valid and invalid creds and diff the two
-responses before running a wordlist.
-
----
+The banner, panel and progress go to **stderr**; results and `--json` go to
+**stdout**. `-q` turns off progress, `--no-banner` just the banner. On a
+non-UTF-8 terminal the logo falls back to a `#` font, and colors only appear on
+a TTY. `NO_COLOR=1` kills colors, `FORCE_COLOR=1` forces them,
+`AUTHPROBE_ASCII=plain` forces the plain logo.
 
 ## Tests
 
@@ -312,7 +305,3 @@ responses before running a wordlist.
 pip install -e ".[dev]"
 pytest
 ```
-
-Tests cover detection logic, the rate limiter, hit/no-hit runs, the progress
-hook, HTTP-error tolerance, JSON-body mode, the presets, the ASCII banner/panel
-rendering and its env switches, and a concurrency deadlock regression.

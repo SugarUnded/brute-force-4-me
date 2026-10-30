@@ -51,7 +51,7 @@ def _apply_preset_path(url: str, path: str | None) -> str:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="authprobe",
-        description="Probe an HTTP login endpoint with candidate credentials (authorized testing only).",
+        description="Probe an HTTP login endpoint with candidate credentials.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("url", nargs="?", help="login endpoint URL (or base URL when using --preset)")
@@ -71,8 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="extra request header (repeatable)")
     p.add_argument("-d", "--data", action="append", default=[], metavar="K:V",
                    help="extra static form field (repeatable)")
-    p.add_argument("-c", "--concurrency", type=int, default=10)
-    p.add_argument("-r", "--rate", type=float, default=0.0, help="requests/sec cap (0 = unlimited)")
+    p.add_argument("-c", "--concurrency", type=int, default=0,
+                   help="in-flight requests; 0 (default) = unlimited, one task per candidate")
     p.add_argument("-t", "--timeout", type=float, default=10.0)
     p.add_argument("--user-agent")
     p.add_argument("--follow-redirects", action="store_true")
@@ -131,7 +131,6 @@ def _build_config(args: argparse.Namespace) -> ProbeConfig:
         failure_body_contains=failure_body,
         timeout=args.timeout,
         concurrency=args.concurrency,
-        rate=args.rate,
         follow_redirects=args.follow_redirects,
         stop_on_success=not args.no_stop,
         json_body=json_body,
@@ -179,8 +178,8 @@ async def _run(args: argparse.Namespace) -> int:
                 ("method", cfg.method),
                 ("fields", f"{cfg.username_field} / {cfg.password_field}"),
                 ("candidates", f"{total}  ({len(usernames)} user x {len(passwords)} pass)"),
-                ("concurrency", str(cfg.concurrency)),
-                ("rate", "unlimited" if cfg.rate <= 0 else f"{cfg.rate}/s"),
+                ("mode", "MAX POWER (no rate limit)"),
+                ("concurrency", "unlimited" if cfg.concurrency <= 0 else str(cfg.concurrency)),
                 ("detect", _describe_detection(cfg)),
                 ("stop", "first hit" if cfg.stop_on_success else "scan all"),
             ],
@@ -217,8 +216,28 @@ async def _run(args: argparse.Namespace) -> int:
     return 0 if found else 1
 
 
+def _print_welcome() -> None:
+    """Bare `authprobe` opens the interface: banner plus a short cheat-sheet."""
+    out = sys.stdout
+    banner.print_banner(out, color=banner.supports_color(out))
+    print("usage: authprobe <url> --user NAME -w WORDS [options]")
+    print("       authprobe --list-presets")
+    print()
+    print("examples:")
+    print("  authprobe https://host/login --user admin -w words.txt --success-status 302")
+    print("  authprobe https://host --preset wp-login -w words.txt")
+    print("  authprobe https://host/api/login --preset json-api --user admin -w words.txt")
+    print()
+    print("run `authprobe --help` for every flag")
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw = sys.argv[1:] if argv is None else list(argv)
+    if not raw:
+        _print_welcome()
+        return 0
+
+    args = build_parser().parse_args(raw)
 
     if args.list_presets:
         _print_presets()

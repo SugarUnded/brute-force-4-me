@@ -1,9 +1,6 @@
-"""Detection presets for common login flows.
+"""Login presets: field names, url path and the success/failure signal.
 
-A preset only describes *how a login behaves* - field names, the URL path, and
-the signal that separates success from failure. It never carries a target host:
-you supply that. Presets are starting points, and every value they set can be
-overridden on the command line.
+No host here, that's yours to give. Every value can be overridden by flags.
 """
 
 from __future__ import annotations

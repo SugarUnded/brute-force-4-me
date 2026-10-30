@@ -1,9 +1,4 @@
-"""ASCII banner and boxed status panel for the CLI.
-
-Everything here renders to a text stream. The logo falls back to a plain
-7-bit ASCII font when the stream's encoding is not UTF-8, and colors are only
-emitted to a TTY (or when ``FORCE_COLOR`` is set / suppressed by ``NO_COLOR``).
-"""
+"""Banner and status panel. Plain '#' logo when the terminal isn't UTF-8."""
 
 from __future__ import annotations
 
@@ -33,9 +28,7 @@ _BLOCK = [
     "╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝",
 ]
 
-# --- same word, plain 7-bit ASCII (fallback) ------------------------------
-# Derived from the block font so the silhouette is identical and every row
-# keeps the same width: any non-space cell becomes ``#``.
+# same shape, plain ascii, for dumb terminals
 _PLAIN = ["".join("#" if ch != " " else " " for ch in row) for row in _BLOCK]
 
 __all__ = [
@@ -57,7 +50,6 @@ __all__ = [
 
 
 def supports_color(stream: TextIO = sys.stderr) -> bool:
-    """True when ANSI colors should be emitted to ``stream``."""
     if os.environ.get("NO_COLOR"):
         return False
     if os.environ.get("AUTHPROBE_FORCE_COLOR") or os.environ.get("FORCE_COLOR"):
